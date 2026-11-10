@@ -30,34 +30,36 @@ pub enum ParseError {
     NotANumber(String),
     MissingOperand,
 }
-
+    
 pub enum EvalError {}
 
 // Takes a string and produces an expression tree
 pub fn parse(input: &str) -> Result<Expr, ParseError> {
-    let mut stack: Vec<Expr> = Vec::new();
+    let mut stack: Vec<Box<Expr>> = Vec::new();
     for word in input.split_ascii_whitespace() {
-        match word {
+        let expr = match word {
             "+" => {
                 let a = stack.pop().ok_or(ParseError::MissingOperand)?;
                 let b = stack.pop().ok_or(ParseError::MissingOperand)?;
-                let a = Box::new(a);
-                let b = Box::new(b);
-                let expr = Expr::Add(a, b);
-                stack.push(expr);
-            },
+                Expr::Add(a, b)
+            }
+            "sqr"  => 
+            {
+                let a = stack.pop().ok_or(ParseError::MissingOperand)?;
+                Expr::Square(a)
+            }
             _ => {
                 let number = word
                     .parse::<i64>()
                     .map_err(|_| ParseError::NotANumber(word.to_string()))?;
-                    let expr = Expr::Number(number);
-                    stack.push(expr);
+                    Expr::Number(number)
             }
-        }
+        };
+        stack.push(Box::new(expr));
     };
     assert_eq!(stack.len(), 1);
     let res = stack.pop().unwrap();
-    Ok(res)
+    Ok(*res)
 }
 
 // Evaluates the expression
@@ -70,6 +72,10 @@ pub fn eval(expr: &Expr) -> Result<i64, ParseError>  {
             let b = eval(b)?;
             Ok(a + b)
         },
+        Expr::Square(a) => {
+            let a = eval(a)?;
+            Ok(a.pow(2))
+        }
         _ => Ok(1)
     }
 }
@@ -101,6 +107,14 @@ mod tests {
         let expr = parse(input).unwrap();
         let value = eval(&expr).unwrap();
         assert_eq!(value, 42);
+    }
+
+    #[test]
+    fn square() {
+        let input = "5 sqr";
+        let expr = parse(input).unwrap();
+        let value = eval(&expr).unwrap();
+        assert_eq!(value, 25)
     }
 
 
