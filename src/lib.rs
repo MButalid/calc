@@ -1,4 +1,3 @@
-use std::num::ParseIntError;
 
 
 pub fn add(left: u64, right: u64) -> u64 {
@@ -23,25 +22,39 @@ pub enum Expr {
     Number(i64),
     Square(Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
+    Multiplication(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>)
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     NotANumber(String),
     MissingOperand,
+    TooManyOperands,
+    EmptyInput,
 }
-    
-pub enum EvalError {}
+
+#[derive(Debug, PartialEq)]
+pub enum EvalError {
+    DivisionByZero,
+}
 
 // Takes a string and produces an expression tree
 pub fn parse(input: &str) -> Result<Expr, ParseError> {
     let mut stack: Vec<Box<Expr>> = Vec::new();
     for word in input.split_ascii_whitespace() {
         let expr = match word {
-            "+" => {
-                let a = stack.pop().ok_or(ParseError::MissingOperand)?;
+            "+" | "-" | "*" | "/" => {
                 let b = stack.pop().ok_or(ParseError::MissingOperand)?;
-                Expr::Add(a, b)
+                let a = stack.pop().ok_or(ParseError::MissingOperand)?;
+                match word {
+                    "+" => Expr::Add(a, b),
+                    "-" => Expr::Sub(a, b),
+                    "*" => Expr::Multiplication(a, b),
+                    "/" => Expr::Div(a, b),
+                    _ => unreachable!(),
+                }
             }
             "sqr"  => 
             {
@@ -57,27 +70,28 @@ pub fn parse(input: &str) -> Result<Expr, ParseError> {
         };
         stack.push(Box::new(expr));
     };
-    assert_eq!(stack.len(), 1);
-    let res = stack.pop().unwrap();
-    Ok(*res)
+
+    match stack.pop() {
+        Some(expr) if stack.is_empty() => Ok(*expr),
+        Some(_) => Err(ParseError::TooManyOperands),
+        None => Err(ParseError::EmptyInput),
+    }
 }
 
 // Evaluates the expression
-pub fn eval(expr: &Expr) -> Result<i64, ParseError>  {
-    match expr {
-        // n: &i64
-        Expr::Number(n) => Ok(*n),
-        Expr::Add(a,  b) => {
-            let a = eval(a)?;
-            let b = eval(b)?;
-            Ok(a + b)
+pub fn eval(expr: &Expr) -> Result<i64, EvalError>  {
+    let value = match expr {
+        Expr::Number(n) => *n,
+        Expr::Add(a, b) => eval(a)? + eval(b)?,
+        Expr::Square(a) => eval(a)?.pow(2),
+        Expr::Sub(a, b) => eval(a)? - eval(b)?,
+        Expr::Multiplication(a, b) => eval(a)? * eval(b)?,
+        Expr::Div(_,divisor) if eval(&divisor)? == 0 => {
+            return Err(EvalError::DivisionByZero)
         },
-        Expr::Square(a) => {
-            let a = eval(a)?;
-            Ok(a.pow(2))
-        }
-        _ => Ok(1)
-    }
+        Expr::Div(a, b) => eval(a)? / eval(b)?,
+    };
+    Ok(value)
 }
 
 
@@ -117,5 +131,51 @@ mod tests {
         assert_eq!(value, 25)
     }
 
+    #[test]
+    fn too_many_operands() {
+        let input = "42 42 42 +";
+        let error = parse(input).unwrap_err();
+        assert_eq!(error, ParseError::TooManyOperands);
+    }
+
+    #[test]
+    fn empty_input() {
+        let input = "       ";
+        let error = parse(input).unwrap_err();
+        assert_eq!(error, ParseError::EmptyInput);
+    }
+
+
+    #[test]
+    fn sub() {
+        let input = "42 2 -";
+        let expr = parse(input).unwrap();
+        let value = eval(&expr).unwrap();
+        assert_eq!(value, 40);
+    }
+
+    #[test]
+    fn mul() {
+        let input = "21 2 *";
+        let expr = parse(input).unwrap();
+        let value = eval(&expr).unwrap();
+        assert_eq!(value, 42);
+    }
+
+    #[test]
+    fn div() {
+        let input = "84 2 /";
+        let expr = parse(input).unwrap();
+        let value = eval(&expr).unwrap();
+        assert_eq!(value, 42);
+    }
+
+    #[test]
+    fn divide_by_zero() {
+        let input = "42 0 /";
+        let expr = parse(input).unwrap();
+        let error = eval(&expr).unwrap_err();
+        assert_eq!(error, EvalError::DivisionByZero);
+    }
 
 }
